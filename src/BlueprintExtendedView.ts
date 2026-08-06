@@ -61,7 +61,8 @@ class BlueprintHighlighter implements PluginValue {
   /**
    * Reparse (incrementally, reusing prior fragments) and rebuild the decoration set. Returns an
    * empty set — and does no parsing — when the view is not a blueprint file or has no Jinja
-   * syntax, so the plugin is free on ordinary Markdown editors.
+   * syntax, so the plugin is free on ordinary Markdown editors. Callers must first advance
+   * `this.fragments` through any document changes (see `update`) so reuse stays aligned.
    */
   private computeDecorations(view: EditorView): DecorationSet {
     if (!viewShowsBlueprint(view)) {
@@ -97,13 +98,29 @@ class BlueprintHighlighter implements PluginValue {
   update(update: ViewUpdate) {
     // Rebuild ONLY when the document or the rendered viewport actually changed. A pure cursor /
     // selection movement must not reparse or rebuild — that was the source of the editor jank.
-    if (update.view.composing && update.docChanged) {
-      // During IME composition, avoid reparsing on every keystroke: just shift existing ranges.
-      this.decorations = this.decorations.map(update.changes)
-    } else if (update.docChanged || update.viewportChanged) {
-      this.decorations = this.computeDecorations(update.view)
+    if (!update.docChanged && !update.viewportChanged) {
+      return
     }
-    // Otherwise (selection-only update): keep the existing decorations untouched.
+
+    // Keep the reusable parse fragments aligned with the new document before any reuse. Without
+    // this, incremental parsing would splice old subtrees in at stale offsets and the token
+    // decorations would drift after an edit.
+    if (update.docChanged) {
+      const changedRanges: { fromA: number; toA: number; fromB: number; toB: number }[] = []
+      update.changes.iterChangedRanges((fromA, toA, fromB, toB) =>
+        changedRanges.push({ fromA, toA, fromB, toB }),
+      )
+      this.fragments = TreeFragment.applyChanges(this.fragments, changedRanges)
+    }
+
+    if (update.view.composing && update.docChanged) {
+      // During IME composition, defer the reparse: just shift the existing decorations. The
+      // fragments were advanced above, so the reparse after composition ends stays correct.
+      this.decorations = this.decorations.map(update.changes)
+      return
+    }
+
+    this.decorations = this.computeDecorations(update.view)
   }
 }
 
