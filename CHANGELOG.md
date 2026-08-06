@@ -1,5 +1,9 @@
 ## Changelog
 
+### 0.10.1
+
+- Fix editor jank and cursor jumps when editing `.blueprint` files with the experimental syntax-highlighting setting enabled: highlight decorations are no longer rebuilt on every cursor move, the highlighter no longer forces a live-preview mode switch on open, and it is now installed once as a scoped editor extension instead of restacking on every file load
+
 ### 0.10.0
 
 - Expose a public scripting API: `plugin.api.applyToFile(file)` applies a note's blueprint headlessly (no open note required) and returns an awaitable promise
