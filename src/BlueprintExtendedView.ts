@@ -51,25 +51,41 @@ function hasJinjaDelimiters(doc: string): boolean {
 }
 
 class BlueprintHighlighter implements PluginValue {
-  decorations: DecorationSet
+  decorations: DecorationSet = Decoration.none
   private fragments: readonly TreeFragment[] = []
+  // Whether the current blueprint document has had its decorations built at least once. Gated on
+  // this flag (never on decoration emptiness — a blueprint with no Jinja has empty decorations
+  // legitimately) so we can guarantee exactly one initial build without looping.
+  private hasBuilt = false
+  // Set when the document changed during IME composition, so we reparse once composition ends.
+  private dirtyWhileComposing = false
 
-  constructor(view: EditorView) {
-    this.decorations = this.computeDecorations(view)
+  constructor(
+    view: EditorView,
+    private readonly isEnabled: () => boolean,
+  ) {
+    // Build eagerly if the view context is already known at construction. If `editorInfoField`
+    // is not yet populated (so `viewShowsBlueprint` is false here), the first `update` that sees
+    // a blueprint file performs the one-time build instead — highlighting never waits for an edit.
+    if (this.isEnabled() && viewShowsBlueprint(view)) {
+      this.decorations = this.buildFromScratch(view)
+      this.hasBuilt = true
+    }
+  }
+
+  /** Reset fragments and parse the whole document fresh (used for the initial build). */
+  private buildFromScratch(view: EditorView): DecorationSet {
+    this.fragments = []
+    return this.parseAndBuild(view)
   }
 
   /**
-   * Reparse (incrementally, reusing prior fragments) and rebuild the decoration set. Returns an
-   * empty set — and does no parsing — when the view is not a blueprint file or has no Jinja
-   * syntax, so the plugin is free on ordinary Markdown editors. Callers must first advance
-   * `this.fragments` through any document changes (see `update`) so reuse stays aligned.
+   * Reparse (incrementally, reusing `this.fragments`) and rebuild the decoration set. Callers
+   * must have already confirmed the view is an enabled blueprint file and advanced the fragments
+   * through any document changes. Returns an empty set — with no parse — when the document has no
+   * Jinja delimiters at all.
    */
-  private computeDecorations(view: EditorView): DecorationSet {
-    if (!viewShowsBlueprint(view)) {
-      this.fragments = []
-      return Decoration.none
-    }
-
+  private parseAndBuild(view: EditorView): DecorationSet {
     const doc = view.state.doc.toString()
     if (!hasJinjaDelimiters(doc)) {
       this.fragments = []
@@ -95,44 +111,77 @@ class BlueprintHighlighter implements PluginValue {
     return builder.finish()
   }
 
+  /** Advance the reusable parse fragments through this update's document changes. */
+  private advanceFragments(update: ViewUpdate) {
+    const changedRanges: { fromA: number; toA: number; fromB: number; toB: number }[] = []
+    update.changes.iterChangedRanges((fromA, toA, fromB, toB) =>
+      changedRanges.push({ fromA, toA, fromB, toB }),
+    )
+    this.fragments = TreeFragment.applyChanges(this.fragments, changedRanges)
+  }
+
   update(update: ViewUpdate) {
-    // Rebuild ONLY when the document or the rendered viewport actually changed. A pure cursor /
-    // selection movement must not reparse or rebuild — that was the source of the editor jank.
-    if (!update.docChanged && !update.viewportChanged) {
+    // Truly inert on non-blueprint editors and when the feature is off. This runs on every
+    // keystroke of every Markdown note, so it must bail BEFORE any allocation or fragment work.
+    if (!this.isEnabled() || !viewShowsBlueprint(update.view)) {
+      if (this.hasBuilt) {
+        this.decorations = Decoration.none
+        this.fragments = []
+        this.hasBuilt = false
+      }
       return
     }
 
-    // Keep the reusable parse fragments aligned with the new document before any reuse. Without
-    // this, incremental parsing would splice old subtrees in at stale offsets and the token
-    // decorations would drift after an edit.
-    if (update.docChanged) {
-      const changedRanges: { fromA: number; toA: number; fromB: number; toB: number }[] = []
-      update.changes.iterChangedRanges((fromA, toA, fromB, toB) =>
-        changedRanges.push({ fromA, toA, fromB, toB }),
-      )
-      this.fragments = TreeFragment.applyChanges(this.fragments, changedRanges)
-    }
-
-    if (update.view.composing && update.docChanged) {
-      // During IME composition, defer the reparse: just shift the existing decorations. The
-      // fragments were advanced above, so the reparse after composition ends stays correct.
-      this.decorations = this.decorations.map(update.changes)
+    // During active IME composition, NEVER reparse or rebuild — that can cancel/garble the
+    // composition. Only shift existing decorations to track inserted text, and remember to
+    // reparse once composition ends. This holds regardless of docChanged/viewportChanged.
+    if (update.view.composing) {
+      if (update.docChanged) {
+        this.advanceFragments(update)
+        this.decorations = this.decorations.map(update.changes)
+        this.dirtyWhileComposing = true
+      }
       return
     }
 
-    this.decorations = this.computeDecorations(update.view)
+    // Rebuild on real document changes only — including text committed by a just-ended
+    // composition. `viewportChanged` is deliberately NOT a rebuild trigger: buildDecorations
+    // covers the whole document, so scrolling needs no reparse (scroll-time reparsing was the jank).
+    if (update.docChanged || this.dirtyWhileComposing) {
+      if (update.docChanged) {
+        this.advanceFragments(update)
+      }
+      this.dirtyWhileComposing = false
+      this.decorations = this.parseAndBuild(update.view)
+      this.hasBuilt = true
+      return
+    }
+
+    // Guaranteed one-time initial build: the setting was just toggled on, or editorInfoField
+    // wasn't populated at construction. Flag-gated so it happens exactly once.
+    if (!this.hasBuilt) {
+      this.decorations = this.buildFromScratch(update.view)
+      this.hasBuilt = true
+    }
   }
 }
 
-const blueprintHighlightPlugin = ViewPlugin.fromClass(BlueprintHighlighter, {
-  decorations: (plugin: BlueprintHighlighter) => plugin.decorations,
-})
+/**
+ * The syntax-highlighting editor extension. Registered globally (on every Markdown editor) but
+ * inert unless the editor shows a `.blueprint` file AND `isEnabled()` returns true — the setting
+ * is read live, so toggling it takes effect without stacking or reloading. `isEnabled` closes
+ * over the plugin's settings so the runtime value is always current.
+ */
+function blueprintHighlightExtension(isEnabled: () => boolean) {
+  return ViewPlugin.define((view) => new BlueprintHighlighter(view, isEnabled), {
+    decorations: (plugin: BlueprintHighlighter) => plugin.decorations,
+  })
+}
 
 /**
  * Markdown view used for `.blueprint` files when the experimental syntax-highlighting setting is
- * on. Highlighting itself is provided by `blueprintHighlightPlugin`, registered once as an editor
- * extension in the plugin's `onload` — this view no longer touches editor modes or CodeMirror
- * internals.
+ * on. Highlighting itself is provided by the globally-registered `blueprintHighlightExtension`,
+ * so this view no longer touches editor modes or CodeMirror internals.
  */
 class BlueprintExtendedView extends MarkdownView {
   constructor(leaf: WorkspaceLeaf) {
@@ -142,10 +191,6 @@ class BlueprintExtendedView extends MarkdownView {
   getViewType(): string {
     return VIEW_TYPE_BLUEPRINT
   }
-
-  getDisplayText(): string {
-    return this.file?.basename || 'Blueprint'
-  }
 }
 
-export { BlueprintExtendedView, VIEW_TYPE_BLUEPRINT, blueprintHighlightPlugin }
+export { BlueprintExtendedView, VIEW_TYPE_BLUEPRINT, blueprintHighlightExtension }
