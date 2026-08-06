@@ -1,5 +1,5 @@
 import { jinja } from '@codemirror/lang-jinja'
-import { RangeSetBuilder, StateEffect } from '@codemirror/state'
+import { RangeSetBuilder } from '@codemirror/state'
 import {
   Decoration,
   DecorationSet,
@@ -9,13 +9,18 @@ import {
   ViewUpdate,
 } from '@codemirror/view'
 import { Tree, TreeFragment } from '@lezer/common'
-import { MarkdownView, TFile, WorkspaceLeaf } from 'obsidian'
+import { MarkdownView, WorkspaceLeaf, editorInfoField } from 'obsidian'
+import { BLUEPRINT_FILE_EXTENSION } from './constants'
 
 const VIEW_TYPE_BLUEPRINT = 'blueprint'
 
-const jinjaSupport = jinja()
+// We only need the Jinja/Nunjucks parser to build our token decorations; we deliberately do
+// NOT install the `jinja()` LanguageSupport as an editor language. Blueprint files are edited
+// as Markdown, and our highlighting is layered on top as decorations — installing the Jinja
+// language would replace Obsidian's Markdown editing for the whole document.
+const jinjaParser = jinja().language.parser
 
-const TAG_STYLES = Object.fromEntries(
+const TAG_STYLES: Record<string, string> = Object.fromEntries(
   Object.entries({
     keyword:
       'TagName raw endraw filter endfilter as trans pluralize endtrans with endwith autoescape endautoescape if elif else endif for endfor call endcall block endblock set endset macro endmacro import from include',
@@ -30,31 +35,59 @@ const TAG_STYLES = Object.fromEntries(
   }).flatMap(([style, tags]) => tags.split(' ').map((tag) => [tag, style])),
 )
 
+/**
+ * True when the editor is showing a `.blueprint` file. The highlighter is registered as a
+ * global editor extension (it is attached to every Markdown editor), so it must scope itself
+ * to blueprint files and stay completely inert everywhere else — no parse, no decorations.
+ */
+function viewShowsBlueprint(view: EditorView): boolean {
+  const info = view.state.field(editorInfoField, false)
+  return info?.file?.extension === BLUEPRINT_FILE_EXTENSION
+}
+
+// Cheap secondary guard: nothing to highlight if the document has no Jinja delimiters at all.
+function hasJinjaDelimiters(doc: string): boolean {
+  return doc.includes('{%') || doc.includes('{{') || doc.includes('{#')
+}
+
 class BlueprintHighlighter implements PluginValue {
   decorations: DecorationSet
-  tree: Tree
-  fragments: readonly TreeFragment[] = []
+  private fragments: readonly TreeFragment[] = []
 
   constructor(view: EditorView) {
-    this.tree = jinjaSupport.language.parser.parse(view.state.doc.toString())
-    this.fragments = TreeFragment.addTree(this.tree)
-    this.decorations = this.buildDecorations() ?? Decoration.none
+    this.decorations = this.computeDecorations(view)
   }
 
-  buildDecorations(): DecorationSet {
+  /**
+   * Reparse (incrementally, reusing prior fragments) and rebuild the decoration set. Returns an
+   * empty set — and does no parsing — when the view is not a blueprint file or has no Jinja
+   * syntax, so the plugin is free on ordinary Markdown editors.
+   */
+  private computeDecorations(view: EditorView): DecorationSet {
+    if (!viewShowsBlueprint(view)) {
+      this.fragments = []
+      return Decoration.none
+    }
+
+    const doc = view.state.doc.toString()
+    if (!hasJinjaDelimiters(doc)) {
+      this.fragments = []
+      return Decoration.none
+    }
+
+    const tree = jinjaParser.parse(doc, this.fragments)
+    this.fragments = TreeFragment.addTree(tree, this.fragments)
+    return this.buildDecorations(tree)
+  }
+
+  private buildDecorations(tree: Tree): DecorationSet {
     const builder = new RangeSetBuilder<Decoration>()
 
-    const node = this.tree.cursor()
-    while (node.next()) {
-      builder.add(
-        node.from,
-        node.to,
-        Decoration.mark({ attributes: { bpToken: `BP-${node.name}` } }),
-      )
-
-      const style = TAG_STYLES[node.name]
+    const cursor = tree.cursor()
+    while (cursor.next()) {
+      const style = TAG_STYLES[cursor.name]
       if (style) {
-        builder.add(node.from, node.to, Decoration.mark({ class: `token ${style}` }))
+        builder.add(cursor.from, cursor.to, Decoration.mark({ class: `token ${style}` }))
       }
     }
 
@@ -62,21 +95,28 @@ class BlueprintHighlighter implements PluginValue {
   }
 
   update(update: ViewUpdate) {
-    const tree = jinjaSupport.language.parser.parse(update.state.doc.toString(), this.fragments)
-    if (tree.length < update.view.viewport.to || update.view.composing)
+    // Rebuild ONLY when the document or the rendered viewport actually changed. A pure cursor /
+    // selection movement must not reparse or rebuild — that was the source of the editor jank.
+    if (update.view.composing && update.docChanged) {
+      // During IME composition, avoid reparsing on every keystroke: just shift existing ranges.
       this.decorations = this.decorations.map(update.changes)
-    else if (tree != this.tree || update.viewportChanged || update.selectionSet) {
-      this.tree = tree
-      this.fragments = TreeFragment.addTree(this.tree, this.fragments)
-      this.decorations = this.buildDecorations() ?? Decoration.none
+    } else if (update.docChanged || update.viewportChanged) {
+      this.decorations = this.computeDecorations(update.view)
     }
+    // Otherwise (selection-only update): keep the existing decorations untouched.
   }
 }
 
-const nunjucksHighlightingPlugin = ViewPlugin.fromClass(BlueprintHighlighter, {
+const blueprintHighlightPlugin = ViewPlugin.fromClass(BlueprintHighlighter, {
   decorations: (plugin: BlueprintHighlighter) => plugin.decorations,
 })
 
+/**
+ * Markdown view used for `.blueprint` files when the experimental syntax-highlighting setting is
+ * on. Highlighting itself is provided by `blueprintHighlightPlugin`, registered once as an editor
+ * extension in the plugin's `onload` — this view no longer touches editor modes or CodeMirror
+ * internals.
+ */
 class BlueprintExtendedView extends MarkdownView {
   constructor(leaf: WorkspaceLeaf) {
     super(leaf)
@@ -86,24 +126,9 @@ class BlueprintExtendedView extends MarkdownView {
     return VIEW_TYPE_BLUEPRINT
   }
 
-  async onLoadFile(file: TFile) {
-    await super.onLoadFile(file)
-
-    if (this.getMode() === 'source') {
-      // @ts-expect-error
-      this.currentMode.sourceMode = false
-      // @ts-expect-error
-      this.currentMode.toggleSource()
-    }
-
-    activeWindow.setTimeout(() => {
-      // @ts-expect-error
-      const cm = this.editor.cm as EditorView
-      cm.dispatch({
-        effects: StateEffect.appendConfig.of([jinjaSupport, nunjucksHighlightingPlugin]),
-      })
-    }, 200)
+  getDisplayText(): string {
+    return this.file?.basename || 'Blueprint'
   }
 }
 
-export { BlueprintExtendedView, VIEW_TYPE_BLUEPRINT }
+export { BlueprintExtendedView, VIEW_TYPE_BLUEPRINT, blueprintHighlightPlugin }
