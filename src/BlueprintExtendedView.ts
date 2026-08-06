@@ -124,21 +124,31 @@ class BlueprintHighlighter implements PluginValue {
     // Truly inert on non-blueprint editors and when the feature is off. This runs on every
     // keystroke of every Markdown note, so it must bail BEFORE any allocation or fragment work.
     if (!this.isEnabled() || !viewShowsBlueprint(update.view)) {
-      if (this.hasBuilt) {
+      if (this.hasBuilt || this.dirtyWhileComposing) {
         this.decorations = Decoration.none
         this.fragments = []
         this.hasBuilt = false
+        // Clear any pending composition rebuild too, so a composition interrupted by the view
+        // going inert doesn't force a stray reparse if the view becomes active again.
+        this.dirtyWhileComposing = false
       }
       return
     }
 
     // During active IME composition, NEVER reparse or rebuild — that can cancel/garble the
-    // composition. Only shift existing decorations to track inserted text, and remember to
-    // reparse once composition ends. This holds regardless of docChanged/viewportChanged.
+    // composition. Only shift existing decorations to track inserted text, and defer any needed
+    // rebuild to the first update after composition ends. This holds regardless of
+    // docChanged/viewportChanged.
     if (update.view.composing) {
       if (update.docChanged) {
         this.advanceFragments(update)
         this.decorations = this.decorations.map(update.changes)
+      }
+      // Defer the rebuild whenever one is pending: a document edit to reflect, OR the one-time
+      // initial build that never ran because editorInfoField was unready at construction and the
+      // very first update is a composition start. We must NOT build mid-composition, so in that
+      // narrow case pre-existing Jinja stays unhighlighted until composition commits.
+      if (update.docChanged || !this.hasBuilt) {
         this.dirtyWhileComposing = true
       }
       return
