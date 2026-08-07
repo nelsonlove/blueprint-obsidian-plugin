@@ -23,6 +23,9 @@ class BlueprintSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.experimentalHasBlueprintSyntaxHighlight = value
             await this.plugin.saveSettings()
+            // The highlighter extension reads this setting live; reconfigure open editors so the
+            // change takes effect immediately on open/new blueprint files without an app reload.
+            this.app.workspace.updateOptions()
           }),
       )
   }
