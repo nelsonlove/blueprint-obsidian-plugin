@@ -1,5 +1,20 @@
 ## Changelog
 
+### 0.11.0
+
+- Blueprint files are markdown by default: a blueprint is recognised by the filename suffix `.blueprint.md` rather than the `.blueprint` extension, so it is an ordinary note that syncs, renders and opens like any other
+- The suffix is configurable in settings — set it back to `.blueprint` for the previous behaviour, including the plugin's own editor, which is only used for a non-markdown suffix
+- Recognition tests the file *name*, not `file.extension` (`Book.blueprint.md` has extension `md`). Existing files are never renamed, and no file type is registered for a markdown suffix
+- The blueprint picker and notices show a blueprint's bare name rather than its full filename
+- Fix: a blueprint is never treated as a note *with* a blueprint. Markdown blueprints are indexed like any note, so a template carrying a `blueprint:` line could be swept up by "update all notes with blueprints" and rendered into itself
+- Fix: remove a duplicate `BLUEPRINT_FILE_EXTENSION` declaration in `utils.ts` that shadowed the one in `constants.ts`
+- An **existing install keeps `.blueprint`** across the upgrade: the new markdown default applies to new installs only, so a vault of `.blueprint` files does not silently stop recognising them
+- `api.applyToFile` refuses a file that is itself a blueprint, matching the guarantee every internal path already makes
+- The suffix setting commits on blur/Enter rather than per keystroke, so a half-typed value is never the active suffix
+- Creating a blueprint keeps its suffix if the inline rename drops it — the rename field selects the basename, which for a markdown suffix contains the marker
+- Syntax highlighting follows the configured suffix: the highlighter scoped itself with `file.extension === 'blueprint'`, which never matches a `.blueprint.md` file (its extension is `md`), so highlighting would have been silently dead under the new default. It now tests the filename against the suffix, read live like the enable flag
+- `extensionToRegister` claims only the last dot-segment (`.bp.tpl` → `tpl`), which is what `TFile.extension` reports; `normalizeSuffix` rejects a bare `.md`
+
 ### 0.10.1
 
 - Fix editor jank and cursor jumps when editing `.blueprint` files with the experimental syntax-highlighting setting enabled: highlight decorations are no longer rebuilt on cursor moves or scrolling, the highlighter no longer forces a live-preview mode switch on open (blueprint files now respect your editor mode), IME/composition input is no longer interrupted, and the highlighter is installed once as a scoped editor extension instead of restacking on every file load. Toggling the setting now takes effect immediately, without an app reload

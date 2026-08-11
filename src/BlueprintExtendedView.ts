@@ -10,7 +10,6 @@ import {
 } from '@codemirror/view'
 import { Tree, TreeFragment } from '@lezer/common'
 import { MarkdownView, WorkspaceLeaf, editorInfoField } from 'obsidian'
-import { BLUEPRINT_FILE_EXTENSION } from './constants'
 
 const VIEW_TYPE_BLUEPRINT = 'blueprint'
 
@@ -36,13 +35,19 @@ const TAG_STYLES: Record<string, string> = Object.fromEntries(
 )
 
 /**
- * True when the editor is showing a `.blueprint` file. The highlighter is registered as a
- * global editor extension (it is attached to every Markdown editor), so it must scope itself
- * to blueprint files and stay completely inert everywhere else — no parse, no decorations.
+ * True when the editor is showing a blueprint. The highlighter is registered as a global
+ * editor extension (it is attached to every Markdown editor), so it must scope itself to
+ * blueprint files and stay completely inert everywhere else — no parse, no decorations.
+ *
+ * Tests the file **name** against the configured suffix, not `file.extension`: under the
+ * default `.blueprint.md` the extension is `md`, so an extension test matches nothing and
+ * highlighting would never fire. Read live, like `isEnabled`, so changing the suffix does
+ * not need a reload.
  */
-function viewShowsBlueprint(view: EditorView): boolean {
+function viewShowsBlueprint(view: EditorView, suffix: string): boolean {
   const info = view.state.field(editorInfoField, false)
-  return info?.file?.extension === BLUEPRINT_FILE_EXTENSION
+  const name = info?.file?.name
+  return !!name && name.endsWith(suffix)
 }
 
 // Cheap secondary guard: nothing to highlight if the document has no Jinja delimiters at all.
@@ -63,11 +68,12 @@ class BlueprintHighlighter implements PluginValue {
   constructor(
     view: EditorView,
     private readonly isEnabled: () => boolean,
+    private readonly getSuffix: () => string,
   ) {
     // Build eagerly if the view context is already known at construction. If `editorInfoField`
     // is not yet populated (so `viewShowsBlueprint` is false here), the first `update` that sees
     // a blueprint file performs the one-time build instead — highlighting never waits for an edit.
-    if (this.isEnabled() && viewShowsBlueprint(view)) {
+    if (this.isEnabled() && viewShowsBlueprint(view, this.getSuffix())) {
       this.decorations = this.buildFromScratch(view)
       this.hasBuilt = true
     }
@@ -123,7 +129,7 @@ class BlueprintHighlighter implements PluginValue {
   update(update: ViewUpdate) {
     // Truly inert on non-blueprint editors and when the feature is off. This runs on every
     // keystroke of every Markdown note, so it must bail BEFORE any allocation or fragment work.
-    if (!this.isEnabled() || !viewShowsBlueprint(update.view)) {
+    if (!this.isEnabled() || !viewShowsBlueprint(update.view, this.getSuffix())) {
       if (this.hasBuilt || this.dirtyWhileComposing) {
         this.decorations = Decoration.none
         this.fragments = []
@@ -178,12 +184,12 @@ class BlueprintHighlighter implements PluginValue {
 
 /**
  * The syntax-highlighting editor extension. Registered globally (on every Markdown editor) but
- * inert unless the editor shows a `.blueprint` file AND `isEnabled()` returns true — the setting
- * is read live, so toggling it takes effect without stacking or reloading. `isEnabled` closes
- * over the plugin's settings so the runtime value is always current.
+ * inert unless the editor shows a blueprint AND `isEnabled()` returns true — both the setting
+ * and the suffix are read live, so toggling either takes effect without stacking or reloading.
+ * Both closures read the plugin's settings so the runtime values are always current.
  */
-function blueprintHighlightExtension(isEnabled: () => boolean) {
-  return ViewPlugin.define((view) => new BlueprintHighlighter(view, isEnabled), {
+function blueprintHighlightExtension(isEnabled: () => boolean, getSuffix: () => string) {
+  return ViewPlugin.define((view) => new BlueprintHighlighter(view, isEnabled, getSuffix), {
     decorations: (plugin: BlueprintHighlighter) => plugin.decorations,
   })
 }
