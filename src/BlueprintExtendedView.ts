@@ -11,7 +11,6 @@ import {
 import { Tree, TreeFragment } from '@lezer/common'
 import { MarkdownView, WorkspaceLeaf, editorInfoField } from 'obsidian'
 
-
 const VIEW_TYPE_BLUEPRINT = 'blueprint'
 
 // We only need the Jinja/Nunjucks parser to build our token decorations; we deliberately do

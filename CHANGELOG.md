@@ -3,7 +3,7 @@
 ### 0.11.0
 
 - Blueprint files are markdown by default: a blueprint is recognised by the filename suffix `.blueprint.md` rather than the `.blueprint` extension, so it is an ordinary note that syncs, renders and opens like any other
-- The suffix is configurable in settings — set it back to `.blueprint` for the previous behaviour, including the plugin's own editor and its optional syntax highlighting, which only apply to a non-markdown suffix
+- The suffix is configurable in settings — set it back to `.blueprint` for the previous behaviour, including the plugin's own editor, which is only used for a non-markdown suffix
 - Recognition tests the file *name*, not `file.extension` (`Book.blueprint.md` has extension `md`). Existing files are never renamed, and no file type is registered for a markdown suffix
 - The blueprint picker and notices show a blueprint's bare name rather than its full filename
 - Fix: a blueprint is never treated as a note *with* a blueprint. Markdown blueprints are indexed like any note, so a template carrying a `blueprint:` line could be swept up by "update all notes with blueprints" and rendered into itself

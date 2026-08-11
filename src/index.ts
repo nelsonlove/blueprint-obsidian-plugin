@@ -115,7 +115,9 @@ export default class BlueprintPlugin extends Plugin {
             subMenu.addItem((item) => {
               item
                 .setTitle('New note from blueprint')
-                .onClick(async () => createNoteFromBlueprintInFolder(this.app, file.path, this.suffix))
+                .onClick(async () =>
+                  createNoteFromBlueprintInFolder(this.app, file.path, this.suffix),
+                )
             })
             subMenu.addItem((item) => {
               item
@@ -238,12 +240,12 @@ export default class BlueprintPlugin extends Plugin {
       )
     }
 
-    // Experimental Jinja/Nunjucks syntax highlighting for `.blueprint` files. Registered once,
+    // Experimental Jinja/Nunjucks syntax highlighting for blueprints. Registered once,
     // unconditionally, as a global editor extension (the supported API) rather than dispatched
-    // per file load — so it can never stack across leaf reuse. The extension reads the setting
-    // live and is inert unless the editor shows a `.blueprint` file with the feature on, so
-    // registering it always (even when off) is safe and lets a runtime toggle take effect via
-    // `workspace.updateOptions()` — no app reload needed.
+    // per file load — so it can never stack across leaf reuse. The extension reads both the
+    // setting and the suffix live, and is inert unless the editor shows a file matching the
+    // configured suffix with the feature on, so registering it always (even when off) is safe
+    // and lets a runtime change take effect via `workspace.updateOptions()` — no app reload.
     this.registerEditorExtension(
       blueprintHighlightExtension(
         () => this.settings.experimentalHasBlueprintSyntaxHighlight,

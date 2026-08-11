@@ -37,6 +37,10 @@ class BlueprintSettingTab extends PluginSettingTab {
           if (value === this.plugin.settings.blueprintSuffix) return
           this.plugin.settings.blueprintSuffix = value
           await this.plugin.saveSettings()
+          // The highlighter reads the suffix live but only re-evaluates on a
+          // transaction; without this an open file keeps (or lacks) highlighting
+          // until some unrelated edit or click happens to wake the editor.
+          this.app.workspace.updateOptions()
         }
 
         text.setPlaceholder(DEFAULT_BLUEPRINT_SUFFIX).setValue(this.plugin.settings.blueprintSuffix)
