@@ -25,6 +25,8 @@ async function createBlueprintInFolder(app: App, folderPath: string, suffix: str
 
   const createdBlueprint = await app.vault.create(path.join(folderPath, blueprintName), '')
 
+  keepSuffixOnFirstRename(app, createdBlueprint, suffix)
+
   const mostRecentLeaf = app.workspace.getMostRecentLeaf()
 
   if (mostRecentLeaf) {
@@ -32,6 +34,33 @@ async function createBlueprintInFolder(app: App, folderPath: string, suffix: str
     await app.workspace.revealLeaf(mostRecentLeaf)
     mostRecentLeaf.setEphemeralState({ rename: 'all' })
   }
+}
+
+/**
+ * Puts the suffix back if the first rename drops it.
+ *
+ * Obsidian's inline rename affordance selects the file's *basename*, which for a
+ * markdown suffix is `Untitled Blueprint.blueprint` — the marker is inside the
+ * selection. So the happy path (create, type a name, Enter) produced `Book.md`,
+ * a file the plugin no longer recognises as a blueprint at all.
+ *
+ * Scoped to this one file and to its first rename: a later deliberate rename is
+ * the user's business. The listener detaches on the first rename of this file, and
+ * on a timeout if the file is never renamed.
+ */
+function keepSuffixOnFirstRename(app: App, file: TFile, suffix: string) {
+  const ref = app.vault.on('rename', (renamed) => {
+    if (renamed !== file) return
+    app.vault.offref(ref)
+    if (renamed.name.endsWith(suffix)) return
+
+    const parent = renamed.parent?.path ?? ''
+    const stem = renamed.name.replace(/\.md$/, '')
+    void app.fileManager.renameFile(renamed, path.join(parent, `${stem}${suffix}`))
+  })
+
+  // Nothing guarantees a rename ever happens — the user can dismiss the field.
+  activeWindow.setTimeout(() => app.vault.offref(ref), 120_000)
 }
 
 async function createNoteFromBlueprint(app: App, suffix: string) {

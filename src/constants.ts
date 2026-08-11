@@ -26,7 +26,10 @@ const LEGACY_BLUEPRINT_SUFFIX = '.blueprint' as const
  */
 function extensionToRegister(suffix: string): string | null {
   if (suffix.endsWith('.md')) return null
-  const ext = suffix.replace(/^\./, '')
+  // Obsidian keys registerExtensions on TFile.extension, which is the LAST
+  // dot-segment: `Notes.bp.tpl` has extension `tpl`, not `bp.tpl`. Registering
+  // the whole tail would claim an extension no file ever reports.
+  const ext = suffix.split('.').pop() ?? ''
   return ext.length > 0 ? ext : null
 }
 
@@ -38,6 +41,9 @@ function extensionToRegister(suffix: string): string | null {
 function normalizeSuffix(raw: string | undefined): string {
   const trimmed = (raw ?? '').trim()
   if (!trimmed.startsWith('.') || trimmed.length < 2) return DEFAULT_BLUEPRINT_SUFFIX
+  // `.md` would make every note in the vault a blueprint, which turns the plugin
+  // silently inert: every note is a blueprint, so no note *has* one.
+  if (trimmed === '.md') return DEFAULT_BLUEPRINT_SUFFIX
   return trimmed
 }
 

@@ -8,6 +8,11 @@
 - The blueprint picker and notices show a blueprint's bare name rather than its full filename
 - Fix: a blueprint is never treated as a note *with* a blueprint. Markdown blueprints are indexed like any note, so a template carrying a `blueprint:` line could be swept up by "update all notes with blueprints" and rendered into itself
 - Fix: remove a duplicate `BLUEPRINT_FILE_EXTENSION` declaration in `utils.ts` that shadowed the one in `constants.ts`
+- An **existing install keeps `.blueprint`** across the upgrade: the new markdown default applies to new installs only, so a vault of `.blueprint` files does not silently stop recognising them
+- `api.applyToFile` refuses a file that is itself a blueprint, matching the guarantee every internal path already makes
+- The suffix setting commits on blur/Enter rather than per keystroke, so a half-typed value is never the active suffix
+- Creating a blueprint keeps its suffix if the inline rename drops it — the rename field selects the basename, which for a markdown suffix contains the marker
+- `extensionToRegister` claims only the last dot-segment (`.bp.tpl` → `tpl`), which is what `TFile.extension` reports; `normalizeSuffix` rejects a bare `.md`
 
 ### 0.10.0
 

@@ -22,19 +22,31 @@ class BlueprintSettingTab extends PluginSettingTab {
         `How a blueprint is recognised. The default ${DEFAULT_BLUEPRINT_SUFFIX} keeps blueprints ` +
           `as ordinary markdown notes, so they sync, render and open like everything else. ` +
           `Use ${LEGACY_BLUEPRINT_SUFFIX} for standalone files with the plugin's own editor. ` +
-          `Existing files are not renamed, and changing this needs a restart to take effect.`,
+          `Existing files are NOT renamed — change this and any file not matching the new ` +
+          `suffix stops being treated as a blueprint. Takes effect as soon as you leave the ` +
+          `field; opening non-markdown blueprints needs a restart.`,
       )
-      .addText((text) =>
-        text
-          .setPlaceholder(DEFAULT_BLUEPRINT_SUFFIX)
-          .setValue(this.plugin.settings.blueprintSuffix)
-          .onChange(async (value) => {
-            // Stored verbatim so a half-typed suffix isn't rewritten under the caret;
-            // every reader goes through `plugin.suffix`, which falls back when invalid.
-            this.plugin.settings.blueprintSuffix = value
-            await this.plugin.saveSettings()
-          }),
-      )
+      .addText((text) => {
+        // Committed on blur/Enter, not per keystroke. Every reader resolves the
+        // suffix live through `plugin.suffix`, so a half-typed value like `.b` would
+        // otherwise be the *active* suffix — and the recognition set it produces is
+        // what the self-application guard relies on to know which files are
+        // templates. A sweep run mid-edit could then render a template into itself.
+        const commit = async () => {
+          const value = text.getValue()
+          if (value === this.plugin.settings.blueprintSuffix) return
+          this.plugin.settings.blueprintSuffix = value
+          await this.plugin.saveSettings()
+        }
+
+        text.setPlaceholder(DEFAULT_BLUEPRINT_SUFFIX).setValue(this.plugin.settings.blueprintSuffix)
+        text.inputEl.addEventListener('blur', () => void commit())
+        text.inputEl.addEventListener('keydown', (event: KeyboardEvent) => {
+          if (event.key === 'Enter') void commit()
+        })
+
+        return text
+      })
 
     new Setting(containerEl).setName('Experimental features').setHeading()
     new Setting(containerEl)

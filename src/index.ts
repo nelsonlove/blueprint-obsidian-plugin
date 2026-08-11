@@ -14,7 +14,12 @@ import {
   executeFolderBlueprints,
   updateBlueprintNotes,
 } from './commands'
-import { DEFAULT_BLUEPRINT_SUFFIX, extensionToRegister, normalizeSuffix } from './constants'
+import {
+  DEFAULT_BLUEPRINT_SUFFIX,
+  extensionToRegister,
+  LEGACY_BLUEPRINT_SUFFIX,
+  normalizeSuffix,
+} from './constants'
 import { EnsureError, fileHasBlueprint, fileIsBlueprint } from './utils'
 
 interface BlueprintPluginSettings {
@@ -41,10 +46,10 @@ export interface BlueprintPluginApi {
    * `metadataCache.on('changed', ...)`) before calling, otherwise the call
    * rejects — or renders from stale metadata.
    *
-   * Rejects with `EnsureError` when a precondition fails (no blueprint link,
-   * blueprint not resolvable, no cached metadata, note changed while
-   * rendering, plugin not loaded), and with the underlying template error
-   * when rendering fails.
+   * Rejects with `EnsureError` when a precondition fails (the file is itself a
+   * blueprint, no blueprint link, blueprint not resolvable, no cached metadata,
+   * note changed while rendering, plugin not loaded), and with the underlying
+   * template error when rendering fails.
    */
   applyToFile: (file: TFile) => Promise<void>
 
@@ -65,6 +70,13 @@ export default class BlueprintPlugin extends Plugin {
     applyToFile: async (file) => {
       if (!this.isReady) {
         throw new EnsureError('Blueprint plugin is not loaded')
+      }
+      // Every internal path refuses this via fileHasBlueprint; the API must too.
+      // A caller iterating markdown files and applying to each would otherwise
+      // render a blueprint into itself — reachable now that blueprints are
+      // ordinary notes with a metadata cache entry.
+      if (fileIsBlueprint(file, this.suffix)) {
+        throw new EnsureError(`${file.basename} is a blueprint, not a note with a blueprint`)
       }
       return applyBlueprintToFile(this.app, file, this.suffix)
     },
@@ -230,7 +242,18 @@ export default class BlueprintPlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData())
+    const stored = (await this.loadData()) as Partial<BlueprintPluginSettings> | null
+
+    // `.blueprint.md` is the default for a *new* install only. A vault that was
+    // already using this plugin has `.blueprint` files on disk and no
+    // `blueprintSuffix` key; handing it the new default would stop every one of
+    // them being recognised — no picker entries, no commands, and no registered
+    // handler to open them with. An existing install keeps the legacy suffix
+    // until its owner changes it deliberately.
+    const isExistingInstall = !!stored && !('blueprintSuffix' in stored)
+    const fallback = isExistingInstall ? LEGACY_BLUEPRINT_SUFFIX : DEFAULT_BLUEPRINT_SUFFIX
+
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, { blueprintSuffix: fallback }, stored)
   }
 
   async saveSettings() {

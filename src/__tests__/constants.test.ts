@@ -19,6 +19,11 @@ describe('extensionToRegister', () => {
     expect(extensionToRegister('.tpl')).toBe('tpl')
   })
 
+  test('claims only the last dot-segment, which is what TFile.extension reports', () => {
+    // `Notes.bp.tpl` has extension `tpl`; registering `bp.tpl` would match nothing.
+    expect(extensionToRegister('.bp.tpl')).toBe('tpl')
+  })
+
   test('claims nothing for a suffix with no extension left', () => {
     expect(extensionToRegister('.')).toBeNull()
   })
@@ -38,6 +43,11 @@ describe('normalizeSuffix', () => {
     expect(normalizeSuffix('blueprint')).toBe(DEFAULT_BLUEPRINT_SUFFIX)
     expect(normalizeSuffix('.')).toBe(DEFAULT_BLUEPRINT_SUFFIX)
     expect(normalizeSuffix(undefined)).toBe(DEFAULT_BLUEPRINT_SUFFIX)
+  })
+
+  test('rejects a bare .md, which would make every note a blueprint', () => {
+    // Every note a blueprint means no note *has* one — the plugin goes inert.
+    expect(normalizeSuffix('.md')).toBe(DEFAULT_BLUEPRINT_SUFFIX)
   })
 })
 
