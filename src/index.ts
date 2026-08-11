@@ -28,7 +28,7 @@ interface BlueprintPluginSettings {
   blueprintSuffix: string
 }
 
-const DEFAULT_SETTINGS: Partial<BlueprintPluginSettings> = {
+const DEFAULT_SETTINGS: BlueprintPluginSettings = {
   experimentalHasBlueprintSyntaxHighlight: false,
   blueprintSuffix: DEFAULT_BLUEPRINT_SUFFIX,
 }
@@ -253,7 +253,7 @@ export default class BlueprintPlugin extends Plugin {
     const isExistingInstall = !!stored && !('blueprintSuffix' in stored)
     const fallback = isExistingInstall ? LEGACY_BLUEPRINT_SUFFIX : DEFAULT_BLUEPRINT_SUFFIX
 
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, { blueprintSuffix: fallback }, stored)
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, { blueprintSuffix: fallback }, stored ?? {})
   }
 
   async saveSettings() {
