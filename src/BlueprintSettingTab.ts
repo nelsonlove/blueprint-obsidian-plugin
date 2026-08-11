@@ -52,9 +52,9 @@ class BlueprintSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Enable syntax highlighting in Blueprint files')
       .setDesc(
-        `Applies to the plugin's own editor, which is only used for a non-markdown ` +
-          `suffix such as ${LEGACY_BLUEPRINT_SUFFIX}. Markdown blueprints open in ` +
-          `Obsidian's editor and are unaffected.`,
+        `Highlights Jinja/Nunjucks tags while editing a blueprint. Works for both file ` +
+          `styles: markdown blueprints are highlighted in Obsidian's own editor, and a ` +
+          `non-markdown suffix such as ${LEGACY_BLUEPRINT_SUFFIX} in the plugin's.`,
       )
       .addToggle((toggle) =>
         toggle

@@ -245,7 +245,10 @@ export default class BlueprintPlugin extends Plugin {
     // registering it always (even when off) is safe and lets a runtime toggle take effect via
     // `workspace.updateOptions()` — no app reload needed.
     this.registerEditorExtension(
-      blueprintHighlightExtension(() => this.settings.experimentalHasBlueprintSyntaxHighlight),
+      blueprintHighlightExtension(
+        () => this.settings.experimentalHasBlueprintSyntaxHighlight,
+        () => this.suffix,
+      ),
     )
 
     this.isReady = true

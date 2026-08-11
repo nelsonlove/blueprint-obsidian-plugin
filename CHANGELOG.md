@@ -12,6 +12,7 @@
 - `api.applyToFile` refuses a file that is itself a blueprint, matching the guarantee every internal path already makes
 - The suffix setting commits on blur/Enter rather than per keystroke, so a half-typed value is never the active suffix
 - Creating a blueprint keeps its suffix if the inline rename drops it — the rename field selects the basename, which for a markdown suffix contains the marker
+- Syntax highlighting follows the configured suffix: the highlighter scoped itself with `file.extension === 'blueprint'`, which never matches a `.blueprint.md` file (its extension is `md`), so highlighting would have been silently dead under the new default. It now tests the filename against the suffix, read live like the enable flag
 - `extensionToRegister` claims only the last dot-segment (`.bp.tpl` → `tpl`), which is what `TFile.extension` reports; `normalizeSuffix` rejects a bare `.md`
 
 ### 0.10.1
