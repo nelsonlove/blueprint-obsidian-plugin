@@ -14,6 +14,10 @@
 - Creating a blueprint keeps its suffix if the inline rename drops it — the rename field selects the basename, which for a markdown suffix contains the marker
 - `extensionToRegister` claims only the last dot-segment (`.bp.tpl` → `tpl`), which is what `TFile.extension` reports; `normalizeSuffix` rejects a bare `.md`
 
+### 0.10.1
+
+- Fix editor jank and cursor jumps when editing `.blueprint` files with the experimental syntax-highlighting setting enabled: highlight decorations are no longer rebuilt on cursor moves or scrolling, the highlighter no longer forces a live-preview mode switch on open (blueprint files now respect your editor mode), IME/composition input is no longer interrupted, and the highlighter is installed once as a scoped editor extension instead of restacking on every file load. Toggling the setting now takes effect immediately, without an app reload
+
 ### 0.10.0
 
 - Expose a public scripting API: `plugin.api.applyToFile(file)` applies a note's blueprint headlessly (no open note required) and returns an awaitable promise

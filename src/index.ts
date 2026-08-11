@@ -1,6 +1,10 @@
 import * as nunjucks from 'nunjucks'
 import { Menu, Plugin, TFile, TFolder } from 'obsidian'
-import { BlueprintExtendedView, VIEW_TYPE_BLUEPRINT } from './BlueprintExtendedView'
+import {
+  BlueprintExtendedView,
+  VIEW_TYPE_BLUEPRINT,
+  blueprintHighlightExtension,
+} from './BlueprintExtendedView'
 import { BlueprintSettingTab } from './BlueprintSettingTab'
 import { BlueprintView } from './BlueprintView'
 import {
@@ -233,6 +237,16 @@ export default class BlueprintPlugin extends Plugin {
           : new BlueprintView(leaf),
       )
     }
+
+    // Experimental Jinja/Nunjucks syntax highlighting for `.blueprint` files. Registered once,
+    // unconditionally, as a global editor extension (the supported API) rather than dispatched
+    // per file load — so it can never stack across leaf reuse. The extension reads the setting
+    // live and is inert unless the editor shows a `.blueprint` file with the feature on, so
+    // registering it always (even when off) is safe and lets a runtime toggle take effect via
+    // `workspace.updateOptions()` — no app reload needed.
+    this.registerEditorExtension(
+      blueprintHighlightExtension(() => this.settings.experimentalHasBlueprintSyntaxHighlight),
+    )
 
     this.isReady = true
   }
