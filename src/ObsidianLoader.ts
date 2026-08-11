@@ -1,7 +1,6 @@
 import * as nunjucks from 'nunjucks'
 import { App } from 'obsidian'
 
-
 class ObsidianLoader extends nunjucks.Loader {
   app: App
   async: true
